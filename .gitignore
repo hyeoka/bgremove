@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Local app data
+input/
+output/
+*.log
+*.tmp
+*.temp
+
+# Local ONNX models are too large for GitHub and not needed by the web app.
+models/
+*.onnx
+
+# Node / web build
+web/node_modules/
+web/dist/
+web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Cloudflare local state
+.wrangler/

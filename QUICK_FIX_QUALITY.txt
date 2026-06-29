@@ -1,0 +1,23 @@
+QUALITY FIX SETTINGS
+
+Normal images:
+Preset = HQ General / product - recommended
+Alpha matting = ON
+Edge adjust = -1
+Feather = 0
+Hard cut = OFF
+
+Hair or fur:
+Preset = Soft edges / hair / fur
+Alpha matting = ON
+Edge adjust = -1
+Feather = 0.2
+Hard cut = OFF
+
+Logo or icon:
+Preset = Logo / icon sharp edge
+Alpha matting = OFF
+Edge adjust = -1
+Feather = 0
+Hard cut = ON
+Hard threshold = 150

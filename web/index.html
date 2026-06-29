@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="브라우저에서 실행되는 무료 배경 제거 도구"
+    />
+    <title>BG Remover Web</title>
+  </head>
+  <body>
+    <div id="app">
+      <main class="shell">
+        <section class="workspace">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">Browser AI</p>
+              <h1>BG Remover Web</h1>
+            </div>
+            <div class="status-pill" id="runtimeStatus">준비됨</div>
+          </header>
+
+          <div class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" accept="image/*" />
+            <div class="dropzone-copy">
+              <strong>이미지를 올려주세요</strong>
+              <span>클릭하거나 파일을 끌어다 놓으면 됩니다.</span>
+            </div>
+          </div>
+
+          <div class="preview-grid">
+            <figure class="preview-panel">
+              <figcaption>원본</figcaption>
+              <div class="preview-canvas">
+                <img id="sourcePreview" alt="원본 미리보기" />
+                <span id="sourceEmpty">업로드 대기 중</span>
+              </div>
+            </figure>
+            <figure class="preview-panel">
+              <figcaption>결과</figcaption>
+              <div class="preview-canvas checker" id="resultCanvasWrap">
+                <img id="resultPreview" alt="배경 제거 결과" />
+                <span id="resultEmpty">처리 후 표시됩니다</span>
+              </div>
+            </figure>
+          </div>
+        </section>
+
+        <aside class="controls">
+          <div class="control-group">
+            <label for="modelSelect">품질</label>
+            <select id="modelSelect">
+              <option value="isnet_fp16" selected>균형형 - 추천</option>
+              <option value="isnet_quint8">가벼움 - 빠른 로딩</option>
+              <option value="isnet">최고 품질 - 큰 모델</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label class="toggle">
+              <input id="gpuToggle" type="checkbox" checked />
+              <span>WebGPU 사용</span>
+            </label>
+            <label class="toggle">
+              <input id="hardCutToggle" type="checkbox" />
+              <span>로고용 하드컷</span>
+            </label>
+          </div>
+
+          <div class="control-group">
+            <label for="edgeAdjust">가장자리 보정 <output id="edgeValue">-1</output></label>
+            <input id="edgeAdjust" type="range" min="-5" max="5" step="1" value="-1" />
+          </div>
+
+          <div class="control-group">
+            <label for="feather">부드럽게 <output id="featherValue">0.0</output></label>
+            <input id="feather" type="range" min="0" max="4" step="0.1" value="0" />
+          </div>
+
+          <div class="control-group">
+            <label for="threshold">하드컷 기준 <output id="thresholdValue">150</output></label>
+            <input id="threshold" type="range" min="0" max="255" step="1" value="150" />
+          </div>
+
+          <div class="control-group">
+            <label for="backgroundSelect">내보내기 배경</label>
+            <select id="backgroundSelect">
+              <option value="transparent" selected>투명 PNG</option>
+              <option value="white">흰색</option>
+              <option value="black">검정</option>
+              <option value="custom">직접 선택</option>
+            </select>
+            <input id="customBackground" type="color" value="#f4f1e8" aria-label="배경색 선택" />
+          </div>
+
+          <div class="actions">
+            <button id="preloadButton" type="button" class="secondary">모델 미리 받기</button>
+            <button id="runButton" type="button">배경 제거</button>
+            <a id="downloadLink" class="download disabled" download="bg-removed.png">PNG 다운로드</a>
+          </div>
+
+          <div class="meter" aria-live="polite">
+            <div class="meter-bar" id="meterBar"></div>
+          </div>
+          <p class="log" id="logText">첫 실행은 모델 다운로드 때문에 시간이 걸릴 수 있습니다.</p>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
