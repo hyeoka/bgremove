@@ -46,7 +46,7 @@ init();
 function init() {
   webGpuAvailable = 'gpu' in navigator;
   if (!webGpuAvailable) {
-    setLog('WebGPU is not available in this browser. CPU mode will be used.');
+    setLog('이 브라우저에서는 WebGPU를 사용할 수 없어 CPU로 실행합니다.');
   }
 
   els.fileInput.addEventListener('change', () => {
@@ -134,36 +134,36 @@ function setSourceFile(file: File) {
   els.sourceEmpty.hidden = true;
   resetResult();
   setProgress(0);
-  setStatus('Image ready');
-  setLog(`Loaded ${file.name}\nSize: ${formatBytes(file.size)}`);
+  setStatus('이미지 준비됨');
+  setLog(`불러온 파일: ${file.name}\n크기: ${formatBytes(file.size)}`);
 }
 
 async function runPreload() {
-  await withBusy('Preloading model', async () => {
+  await withBusy('모델 받는 중', async () => {
     await preload(buildConfig());
     setProgress(100);
-    setLog('Model cache complete. Later runs should start faster.');
+    setLog('모델 캐시가 완료되었습니다. 다음 실행부터 더 빠르게 시작됩니다.');
   });
 }
 
 async function runRemoval() {
   if (!sourceFile) {
-    setLog('Put an image first.');
+    setLog('먼저 이미지를 넣어주세요.');
     return;
   }
 
   const file = sourceFile;
-  await withBusy('Working', async () => {
+  await withBusy('작업 중', async () => {
     resetResult();
     const preset = els.presetSelect.value as PresetName;
     const lines = [
-      `Preset: ${preset}`,
-      `Model: ${modelForPreset(preset)}`,
-      `Alpha matting: ${els.alphaMatting.checked}`,
-      'Running...'
+      `프리셋: ${presetLabel(preset)}`,
+      `모델: ${modelForPreset(preset)}`,
+      `알파 매팅: ${els.alphaMatting.checked ? '켜짐' : '꺼짐'}`,
+      '실행 중...'
     ];
     if (preset === 'fast') {
-      lines.splice(1, 0, 'Warning: fast preview has lower quality. Use HQ for final images.');
+      lines.splice(1, 0, '주의: 빠른 미리보기는 품질이 낮습니다. 최종 결과는 HQ를 권장합니다.');
     }
     setLog(lines.join('\n'));
 
@@ -180,7 +180,7 @@ async function runRemoval() {
     els.downloadLink.classList.remove('disabled');
     els.downloadLink.download = makeDownloadName(file.name);
     setProgress(100);
-    setLog(`${lines.join('\n')}\nDone. Download PNG below.`);
+    setLog(`${lines.join('\n')}\n완료되었습니다. 아래에서 PNG를 다운로드하세요.`);
   });
 }
 
@@ -190,7 +190,7 @@ async function removeMaskWithFallback(file: File): Promise<Blob> {
     return await segmentForeground(file, config);
   } catch (error) {
     if (config.device === 'gpu') {
-      setLog('WebGPU failed. Trying again on CPU...');
+      setLog('WebGPU 실행에 실패했습니다. CPU로 다시 시도합니다...');
       return await segmentForeground(file, { ...config, device: 'cpu' });
     }
     throw error;
@@ -209,10 +209,19 @@ function buildConfig(): Config {
     progress: (key, current, total) => {
       if (total > 0) {
         setProgress(Math.round((current / total) * 100));
-        setLog(`Downloading ${key}: ${formatBytes(current)} / ${formatBytes(total)}`);
+        setLog(`${key} 다운로드 중: ${formatBytes(current)} / ${formatBytes(total)}`);
       }
     }
   };
+}
+
+function presetLabel(preset: PresetName): string {
+  if (preset === 'hq') return 'HQ 일반 / 제품 - 추천';
+  if (preset === 'soft') return '부드러운 가장자리 / 머리카락 / 털';
+  if (preset === 'logo') return '로고 / 아이콘 선명한 컷';
+  if (preset === 'human') return '인물 사진 클래식';
+  if (preset === 'classic') return '클래식 U2Net';
+  return '빠른 미리보기 전용';
 }
 
 function modelForPreset(preset: PresetName): ModelName {
@@ -401,7 +410,7 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Could not read the image.'));
+      reject(new Error('이미지를 읽지 못했습니다.'));
     };
     image.src = url;
   });
@@ -416,7 +425,7 @@ function makeCanvas(width: number, height: number): HTMLCanvasElement {
 
 function mustContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('Canvas 2D is not available.');
+  if (!context) throw new Error('Canvas 2D를 사용할 수 없습니다.');
   return context;
 }
 
@@ -424,7 +433,7 @@ function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
-      else reject(new Error('PNG export failed.'));
+      else reject(new Error('PNG 내보내기에 실패했습니다.'));
     }, 'image/png');
   });
 }
@@ -434,11 +443,11 @@ async function withBusy(label: string, task: () => Promise<void>) {
   setStatus(label);
   try {
     await task();
-    setStatus('Complete');
+    setStatus('완료');
   } catch (error) {
     console.error(error);
-    setStatus('Failed');
-    setLog(error instanceof Error ? error.message : 'Unknown error.');
+    setStatus('실패');
+    setLog(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
   } finally {
     setBusy(false);
   }
