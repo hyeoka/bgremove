@@ -155,7 +155,7 @@ function App() {
         ? {
             alphaMatting: true,
             edgeAdjust: -1,
-            feather: 0.2,
+            feather: 0,
             hardCut: false,
             hardThreshold: 128,
             postProcessMask: true,
@@ -927,7 +927,7 @@ function modelForPreset(preset: PresetName): ModelName {
   if (preset === 'classic') return 'isnet_quint8';
   if (preset === 'human') return 'isnet_fp16';
   if (preset === 'logo') return 'isnet';
-  if (preset === 'ultra') return 'isnet_fp16';
+  if (preset === 'ultra') return 'isnet';
   return 'isnet_fp16';
 }
 
@@ -970,6 +970,7 @@ async function composeOutput(imageFile: File, maskBlob: Blob, settings: Settings
 
   if (settings.preset === 'ultra' && !settings.hardCut) {
     alpha = refineUltraAlpha(alpha, sourceData, width, height);
+    recoverUltraEdgeColors(sourceData, alpha, width, height);
   }
 
   applyAlpha(sourceData, alpha);
@@ -1110,6 +1111,61 @@ function snapConfidentAlpha(alpha: Uint8ClampedArray): Uint8ClampedArray {
     output[index] = value < 5 ? 0 : value > 250 ? 255 : value;
   }
   return output;
+}
+
+function recoverUltraEdgeColors(
+  imageData: ImageData,
+  alpha: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  const data = imageData.data;
+  const radius = 5;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const alphaValue = alpha[index];
+      if (alphaValue <= 8 || alphaValue >= 247) continue;
+
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let totalWeight = 0;
+
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
+
+        const row = yy * width;
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= width) continue;
+
+          const neighborIndex = row + xx;
+          if (alpha[neighborIndex] < 252) continue;
+
+          const distance = Math.max(1, Math.hypot(dx, dy));
+          const weight = 1 / distance;
+          const offset = neighborIndex * 4;
+          red += data[offset] * weight;
+          green += data[offset + 1] * weight;
+          blue += data[offset + 2] * weight;
+          totalWeight += weight;
+        }
+      }
+
+      if (totalWeight === 0) continue;
+
+      const offset = index * 4;
+      const edgeStrength = 1 - Math.abs(alphaValue - 128) / 128;
+      const blend = clamp(edgeStrength * 0.45, 0.12, 0.45);
+
+      data[offset] = Math.round(data[offset] * (1 - blend) + (red / totalWeight) * blend);
+      data[offset + 1] = Math.round(data[offset + 1] * (1 - blend) + (green / totalWeight) * blend);
+      data[offset + 2] = Math.round(data[offset + 2] * (1 - blend) + (blue / totalWeight) * blend);
+    }
+  }
 }
 
 function hardThreshold(alpha: Uint8ClampedArray, threshold: number): Uint8ClampedArray {
