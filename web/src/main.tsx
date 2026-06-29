@@ -1,18 +1,27 @@
-import '@heroui/react/styles';
 import {
   Button,
   Card,
-  Checkbox,
-  Chip
+  Chip,
+  Description,
+  Input,
+  Label,
+  ListBox,
+  ProgressBar,
+  Select,
+  Skeleton,
+  Slider,
+  Switch,
+  Tabs,
+  TextField,
 } from '@heroui/react';
-import { preload, segmentForeground, type Config } from '@imgly/background-removal';
-import { StrictMode, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { type Config, preload, segmentForeground } from '@imgly/background-removal';
+import { type RefObject, StrictMode, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-type PresetName = 'hq' | 'soft' | 'logo' | 'human' | 'classic' | 'fast';
+type PresetName = 'ultra' | 'hq' | 'soft' | 'logo' | 'human' | 'classic' | 'fast';
 type ModelName = 'isnet' | 'isnet_fp16' | 'isnet_quint8';
-type StatusName = '준비됨' | '이미지 준비됨' | '모델 받는 중' | '작업 중' | '완료' | '실패';
+type StatusName = '대기 중' | '이미지 준비됨' | '모델 받는 중' | '처리 중' | '완료' | '실패';
 
 type Settings = {
   preset: PresetName;
@@ -28,8 +37,28 @@ type Settings = {
   hardThreshold: number;
 };
 
+type PresetOption = {
+  value: PresetName;
+  label: string;
+  desc: string;
+};
+
+const presetOptions: PresetOption[] = [
+  { value: 'ultra', label: 'Ultra HQ', desc: '가장자리까지 최대 품질로 정리' },
+  { value: 'hq', label: 'HQ 일반 / 제품', desc: '대부분의 제품 사진에 추천' },
+  {
+    value: 'soft',
+    label: '머리카락 / 털',
+    desc: '부드러운 가장자리를 자연스럽게 보존',
+  },
+  { value: 'logo', label: '로고 / 아이콘', desc: '선명한 하드컷 마스크' },
+  { value: 'human', label: '인물 사진', desc: '사람 중심 이미지에 적합' },
+  { value: 'classic', label: '클래식 U2Net', desc: '가벼운 호환 모드' },
+  { value: 'fast', label: '빠른 미리보기', desc: '작은 모델로 빠르게 확인' },
+];
+
 const initialSettings: Settings = {
-  preset: 'hq',
+  preset: 'ultra',
   alphaMatting: true,
   postProcessMask: true,
   edgeAdjust: -1,
@@ -39,7 +68,7 @@ const initialSettings: Settings = {
   bgThreshold: 10,
   erodeSize: 10,
   hardCut: false,
-  hardThreshold: 128
+  hardThreshold: 128,
 };
 
 function App() {
@@ -47,28 +76,23 @@ function App() {
   const [sourceFile, setSourceFileState] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
   const [resultUrl, setResultUrl] = useState('');
-  const [log, setLog] = useState('준비됨.');
-  const [status, setStatus] = useState<StatusName>('준비됨');
+  const [, setLog] = useState('이미지를 넣으면 브라우저에서 바로 배경 제거를 실행합니다.');
+  const [status, setStatus] = useState<StatusName>('대기 중');
   const [progress, setProgress] = useState(0);
   const [isBusy, setIsBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const webGpuAvailable = useMemo(() => 'gpu' in navigator, []);
+  const downloadRef = useRef<HTMLAnchorElement>(null);
+  const webGpuAvailable = useMemo(() => typeof navigator !== 'undefined' && 'gpu' in navigator, []);
 
   useEffect(() => {
     if (!webGpuAvailable) {
-      setLog('이 브라우저에서는 WebGPU를 사용할 수 없어 CPU로 실행합니다.');
+      setLog('현재 브라우저에서 WebGPU를 사용할 수 없어 CPU 모드로 실행합니다.');
     }
   }, [webGpuAvailable]);
 
-  useEffect(() => {
-    return () => {
-      revokeUrl(sourceUrl);
-      revokeUrl(resultUrl);
-    };
-  }, [sourceUrl, resultUrl]);
-
-  const isDownloadReady = Boolean(resultUrl);
+  useEffect(() => () => revokeUrl(sourceUrl), [sourceUrl]);
+  useEffect(() => () => revokeUrl(resultUrl), [resultUrl]);
 
   function updateSettings(patch: Partial<Settings>) {
     setSettings((current) => ({ ...current, ...patch }));
@@ -76,19 +100,51 @@ function App() {
 
   function applyPreset(preset: PresetName) {
     const defaults: Partial<Settings> =
-      preset === 'logo'
-        ? { alphaMatting: false, edgeAdjust: -1, feather: 0, hardCut: true, hardThreshold: 150 }
-        : preset === 'soft'
-          ? { alphaMatting: true, edgeAdjust: -1, feather: 0.25, hardCut: false, hardThreshold: 128 }
-          : preset === 'fast'
-            ? { alphaMatting: false, edgeAdjust: 0, feather: 0, hardCut: false, hardThreshold: 128 }
-            : { alphaMatting: true, edgeAdjust: -1, feather: 0, hardCut: false, hardThreshold: 128 };
+      preset === 'ultra'
+        ? {
+            alphaMatting: true,
+            edgeAdjust: -1,
+            feather: 0.2,
+            hardCut: false,
+            hardThreshold: 128,
+            postProcessMask: true,
+          }
+        : preset === 'logo'
+          ? {
+              alphaMatting: false,
+              edgeAdjust: -1,
+              feather: 0,
+              hardCut: true,
+              hardThreshold: 150,
+            }
+          : preset === 'soft'
+            ? {
+                alphaMatting: true,
+                edgeAdjust: -1,
+                feather: 0.25,
+                hardCut: false,
+                hardThreshold: 128,
+              }
+            : preset === 'fast'
+              ? {
+                  alphaMatting: false,
+                  edgeAdjust: 0,
+                  feather: 0,
+                  hardCut: false,
+                  hardThreshold: 128,
+                }
+              : {
+                  alphaMatting: true,
+                  edgeAdjust: -1,
+                  feather: 0,
+                  hardCut: false,
+                  hardThreshold: 128,
+                };
 
     setSettings((current) => ({ ...current, preset, ...defaults }));
   }
 
   function setSourceFile(file: File) {
-    revokeUrl(sourceUrl);
     const nextUrl = URL.createObjectURL(file);
     setSourceFileState(file);
     setSourceUrl(nextUrl);
@@ -98,45 +154,63 @@ function App() {
     setLog(`불러온 파일: ${file.name}\n크기: ${formatBytes(file.size)}`);
   }
 
+  function resetResult() {
+    setResultUrl('');
+  }
+
+  function handleFileInput(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (file?.type.startsWith('image/')) setSourceFile(file);
+  }
+
+  function openFilePicker() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }
+
   async function runPreload() {
     await withBusy('모델 받는 중', async () => {
       await preload(buildConfig(settings, webGpuAvailable, setProgress, setLog));
       setProgress(100);
-      setLog('모델 캐시가 완료되었습니다. 다음 실행부터 더 빠르게 시작됩니다.');
+      setLog('모델 캐시가 완료되었습니다. 다음 실행부터 더 빠르게 시작합니다.');
     });
   }
 
   async function runRemoval() {
     if (!sourceFile) {
-      setLog('먼저 이미지를 넣어주세요.');
+      setLog('먼저 이미지를 업로드해 주세요.');
       return;
     }
 
     const file = sourceFile;
-    await withBusy('작업 중', async () => {
+    await withBusy('처리 중', async () => {
       resetResult();
       const lines = [
         `프리셋: ${presetLabel(settings.preset)}`,
         `모델: ${modelForPreset(settings.preset)}`,
         `알파 매팅: ${settings.alphaMatting ? '켜짐' : '꺼짐'}`,
-        '실행 중...'
+        '처리 중...',
       ];
+
       if (settings.preset === 'fast') {
-        lines.splice(1, 0, '주의: 빠른 미리보기는 품질이 낮습니다. 최종 결과는 HQ를 권장합니다.');
+        lines.splice(
+          1,
+          0,
+          '주의: 빠른 미리보기는 품질이 낮을 수 있습니다. 최종 결과는 HQ를 권장합니다.',
+        );
       }
+
       setLog(lines.join('\n'));
 
-      const maskBlob = await removeMaskWithFallback(
-        file,
-        buildConfig(settings, webGpuAvailable, setProgress, setLog)
-      );
+      const config = buildConfig(settings, webGpuAvailable, setProgress, setLog);
+      const maskBlob = await removeMaskWithFallback(file, config, setLog);
       const outputBlob = await composeOutput(file, maskBlob, settings);
 
-      revokeUrl(resultUrl);
-      const nextResultUrl = URL.createObjectURL(outputBlob);
-      setResultUrl(nextResultUrl);
+      setResultUrl(URL.createObjectURL(outputBlob));
       setProgress(100);
-      setLog(`${lines.join('\n')}\n완료되었습니다. 아래에서 PNG를 다운로드하세요.`);
+      setLog(`${lines.join('\n')}\n완료되었습니다. PNG를 다운로드할 수 있습니다.`);
     });
   }
 
@@ -155,322 +229,380 @@ function App() {
     }
   }
 
-  function resetResult() {
-    revokeUrl(resultUrl);
-    setResultUrl('');
-  }
-
-  function handleFileInput(fileList: FileList | null) {
-    const file = fileList?.[0];
-    if (file?.type.startsWith('image/')) setSourceFile(file);
-  }
+  const currentPreset = presetOptions.find((option) => option.value === settings.preset);
+  const isDownloadReady = Boolean(resultUrl);
 
   return (
-    <main className="app-page">
-        <section className="hero">
-          <div className="hero-copy">
-            <Chip className="hero-chip" variant="primary">
-              브라우저 AI 배경 제거
-            </Chip>
-            <h1>BG Remover Pro v6 HQ</h1>
-            <p>
-              이미지는 서버로 업로드하지 않고 브라우저에서 바로 처리합니다. 첫 실행만
-              모델 다운로드 때문에 시간이 조금 걸릴 수 있습니다.
-            </p>
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 text-foreground sm:px-6 lg:px-8">
+      <Card className="border-border bg-surface shadow-sm">
+        <Card.Content className="grid gap-3 p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Card.Title className="text-xl font-bold">
+                  BACKGROUND REMOVER for 기여움 디자인팀
+                </Card.Title>
+              </div>
+              <Card.Description className="mt-1">
+                {currentPreset
+                  ? `현재 프리셋: ${presetLabel(currentPreset.value)}`
+                  : '프리셋을 선택하세요.'}
+              </Card.Description>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Chip
+                color={status === '실패' ? 'danger' : status === '완료' ? 'success' : 'accent'}
+                variant="soft"
+                className="text-base px-3 py-2"
+              >
+                {status}
+              </Chip>
+              <Chip variant="secondary" className="text-base px-3 py-2">
+                {progress}%
+              </Chip>
+            </div>
           </div>
-          <Card className="hero-status-card">
-            <Card.Content>
-              <span className="status-label">현재 상태</span>
-              <strong>{status}</strong>
-              <div className="hero-progress" aria-label="진행률">
-                <div style={{ width: `${progress}%` }} />
-              </div>
-            </Card.Content>
-          </Card>
-        </section>
 
-        <section className="image-row">
-          <ImagePanel
-            title="원본 이미지"
-            url={sourceUrl}
-            emptyText="이미지를 여기에 놓거나 클릭해서 업로드"
-            isUpload
-            isDragging={isDragging}
-            isBusy={isBusy}
-            inputRef={fileInputRef}
-            onFileInput={handleFileInput}
-            onClick={() => fileInputRef.current?.click()}
-            onDragState={setIsDragging}
-            onDropFile={setSourceFile}
-          />
+          <ProgressBar.Root aria-label="진행률" color="accent" maxValue={100} value={progress}>
+            <ProgressBar.Track className="h-1.5">
+              <ProgressBar.Fill />
+            </ProgressBar.Track>
+          </ProgressBar.Root>
+        </Card.Content>
+      </Card>
 
-          <ImagePanel
-            title="결과 PNG"
-            url={resultUrl}
-            emptyText="처리 결과가 여기에 표시됩니다"
-            checker
-          />
-        </section>
-
-        <section className="control-grid">
-          <Card className="control-card main-control-card">
-            <Card.Header>
-              <div>
-                <Card.Title>기본 설정</Card.Title>
-                <Card.Description>
-                  로컬 앱의 프리셋 흐름은 유지하면서 웹용 모델로 실행합니다.
-                </Card.Description>
-              </div>
-            </Card.Header>
-            <Card.Content>
-              <div className="form-row three">
-                <NativeSelect
-                  label="품질 프리셋"
-                  value={settings.preset}
-                  onChange={(value) => applyPreset(value as PresetName)}
-                  options={[
-                    ['hq', 'HQ 일반 / 제품 - 추천'],
-                    ['soft', '부드러운 가장자리 / 머리카락 / 털'],
-                    ['logo', '로고 / 아이콘 선명한 컷'],
-                    ['human', '인물 사진 클래식'],
-                    ['classic', '클래식 U2Net'],
-                    ['fast', '빠른 미리보기 전용']
-                  ]}
-                />
-                <HeroCheckbox
-                  isSelected={settings.alphaMatting}
-                  onChange={(alphaMatting) => updateSettings({ alphaMatting })}
-                  title="알파 매팅"
-                  description="가장자리 품질 개선"
-                />
-                <HeroCheckbox
-                  isSelected={settings.postProcessMask}
-                  onChange={(postProcessMask) => updateSettings({ postProcessMask })}
-                  title="마스크 정리"
-                  description="작은 점과 거친 부분 완화"
-                />
-              </div>
-
-              <div className="form-row three">
-                <RangeField
-                  label="가장자리 보정"
-                  hint="음수는 테두리 제거, 양수는 가장자리 보존"
-                  min={-5}
-                  max={5}
-                  step={1}
-                  value={settings.edgeAdjust}
-                  format={(value) => value.toFixed(0)}
-                  onChange={(edgeAdjust) => updateSettings({ edgeAdjust })}
-                />
-                <RangeField
-                  label="부드럽게 / 소프트 엣지"
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  value={settings.feather}
-                  format={(value) => value.toFixed(2)}
-                  onChange={(feather) => updateSettings({ feather })}
-                />
-                <TextField
-                  label="선택 배경"
-                  value={settings.previewBg}
-                  placeholder="비우면 투명 PNG"
-                  onChange={(previewBg) => updateSettings({ previewBg })}
-                />
-              </div>
-            </Card.Content>
-          </Card>
-
-          <Card className="control-card">
-            <Card.Header>
-              <div>
-                <Card.Title>고급 설정</Card.Title>
-                <Card.Description>필요할 때만 조정하세요.</Card.Description>
-              </div>
-            </Card.Header>
-            <Card.Content>
-              <div className="form-row three">
-                <RangeField
-                  label="전경 기준값"
-                  min={1}
-                  max={255}
-                  step={1}
-                  value={settings.fgThreshold}
-                  format={(value) => value.toFixed(0)}
-                  onChange={(fgThreshold) => updateSettings({ fgThreshold })}
-                />
-                <RangeField
-                  label="배경 기준값"
-                  min={0}
-                  max={254}
-                  step={1}
-                  value={settings.bgThreshold}
-                  format={(value) => value.toFixed(0)}
-                  onChange={(bgThreshold) => updateSettings({ bgThreshold })}
-                />
-                <RangeField
-                  label="침식 크기"
-                  min={1}
-                  max={30}
-                  step={1}
-                  value={settings.erodeSize}
-                  format={(value) => value.toFixed(0)}
-                  onChange={(erodeSize) => updateSettings({ erodeSize })}
-                />
-              </div>
-              <div className="form-row two">
-                <HeroCheckbox
-                  isSelected={settings.hardCut}
-                  onChange={(hardCut) => updateSettings({ hardCut })}
-                  title="하드컷 마스크"
-                  description="로고에는 좋고 머리카락에는 부적합"
-                />
-                <RangeField
-                  label="하드컷 기준값"
-                  min={0}
-                  max={255}
-                  step={1}
-                  value={settings.hardThreshold}
-                  format={(value) => value.toFixed(0)}
-                  onChange={(hardThreshold) => updateSettings({ hardThreshold })}
-                />
-              </div>
-            </Card.Content>
-          </Card>
-
-          <Card className="control-card action-card">
-            <Card.Content>
-              <div className="button-row">
+      <section className="grid gap-5 lg:grid-cols-2">
+        <ImagePanel
+          title="원본 이미지"
+          subtitle="클릭하거나 드래그해서 업로드"
+          url={sourceUrl}
+          emptyText="이미지를 여기에 놓거나 클릭해서 선택하세요"
+          isUpload
+          isDragging={isDragging}
+          isBusy={isBusy}
+          inputRef={fileInputRef}
+          onFileInput={handleFileInput}
+          onClick={openFilePicker}
+          onDragState={setIsDragging}
+          onDropFile={setSourceFile}
+          actions={
+            <>
+              {isDownloadReady ? (
                 <Button
-                  className="primary-button"
+                  fullWidth
                   isDisabled={isBusy}
                   size="lg"
-                  onPress={() => void runRemoval()}
+                  variant="secondary"
+                  onPress={openFilePicker}
                 >
-                  배경 제거
+                  다른 이미지 선택
                 </Button>
+              ) : (
                 <Button
-                  className="secondary-button"
+                  fullWidth
                   isDisabled={isBusy}
                   size="lg"
-                  variant="outline"
+                  variant="secondary"
                   onPress={() => void runPreload()}
                 >
                   모델 미리 받기
                 </Button>
-                <a
-                  className={`download-button ${isDownloadReady ? '' : 'is-disabled'}`}
-                  download={sourceFile ? makeDownloadName(sourceFile.name) : 'bg-removed.png'}
-                  href={isDownloadReady ? resultUrl : undefined}
-                >
-                  PNG 다운로드
-                </a>
-              </div>
-              <label className="log-field">
-                <span>상태 / 로그</span>
-                <textarea value={log} readOnly rows={8} />
-              </label>
-            </Card.Content>
-          </Card>
-        </section>
+              )}
+              <Button
+                fullWidth
+                isDisabled={isBusy}
+                size="lg"
+                variant="primary"
+                onPress={() => void runRemoval()}
+              >
+                배경 제거
+              </Button>
+            </>
+          }
+        />
+
+        <ImagePanel
+          title="결과 PNG"
+          subtitle="투명 배경은 체크 패턴으로 표시"
+          url={resultUrl}
+          emptyText="처리 결과가 여기에 표시됩니다"
+          checker
+          isLoading={status === '처리 중'}
+          actionsClassName="grid gap-2"
+          actions={
+            <>
+              <Button
+                fullWidth
+                isDisabled={!isDownloadReady}
+                size="lg"
+                variant="outline"
+                onPress={() => downloadRef.current?.click()}
+              >
+                PNG 다운로드
+              </Button>
+              <a
+                ref={downloadRef}
+                className="hidden"
+                download={sourceFile ? makeDownloadName(sourceFile.name) : 'bg-removed.png'}
+                href={isDownloadReady ? resultUrl : undefined}
+              >
+                PNG 다운로드
+              </a>
+            </>
+          }
+        />
+      </section>
+
+      <section>
+        <Card className="border-border bg-surface shadow-sm">
+          <Card.Header className="flex flex-wrap items-start justify-between gap-4 p-5 pb-0">
+            <div className="min-w-0">
+              <Card.Title className="text-xl font-bold">작업 설정</Card.Title>
+              <Card.Description className="mt-1">
+                현재 프리셋과 마스크 보정값을 한 번에 조정합니다.
+              </Card.Description>
+            </div>
+          </Card.Header>
+          <Card.Content className="p-5">
+            <Tabs className="grid gap-5" defaultSelectedKey="basic" variant="secondary">
+              <Tabs.ListContainer>
+                <Tabs.List aria-label="설정 탭">
+                  <Tabs.Tab id="basic">기본</Tabs.Tab>
+                  <Tabs.Tab id="advanced">고급</Tabs.Tab>
+                </Tabs.List>
+              </Tabs.ListContainer>
+
+              <Tabs.Panel className="grid gap-4" id="basic">
+                <div className="grid gap-4 rounded-lg border border-border bg-surface-secondary p-4 lg:grid-cols-3">
+                  <HeroSelect
+                    label="프리셋"
+                    value={settings.preset}
+                    options={presetOptions}
+                    onChange={(preset) => applyPreset(preset as PresetName)}
+                  />
+                  <HeroSwitch
+                    isSelected={settings.alphaMatting}
+                    onChange={(alphaMatting) => updateSettings({ alphaMatting })}
+                    title="알파 매팅"
+                    description="머리카락과 가장자리를 부드럽게 개선"
+                  />
+                  <HeroSwitch
+                    isSelected={settings.postProcessMask}
+                    onChange={(postProcessMask) => updateSettings({ postProcessMask })}
+                    title="마스크 정리"
+                    description="작은 노이즈와 거친 부분을 완화"
+                  />
+                  <RangeField
+                    label="가장자리 보존정도"
+                    min={-5}
+                    max={5}
+                    step={1}
+                    value={settings.edgeAdjust}
+                    format={(value) => value.toFixed(0)}
+                    onChange={(edgeAdjust) => updateSettings({ edgeAdjust })}
+                  />
+                  <RangeField
+                    label="경계선 부드럽게"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={settings.feather}
+                    format={(value) => value.toFixed(2)}
+                    onChange={(feather) => updateSettings({ feather })}
+                  />
+                  <HeroTextInput
+                    label="배경색"
+                    value={settings.previewBg}
+                    description=""
+                    placeholder="비우면 투명 PNG"
+                    onChange={(previewBg) => updateSettings({ previewBg })}
+                  />
+                </div>
+              </Tabs.Panel>
+
+              <Tabs.Panel className="grid gap-4" id="advanced">
+                <div className="grid gap-4 rounded-lg border border-border bg-surface-secondary p-4 lg:grid-cols-3">
+                  <RangeField
+                    label="전경 기준값"
+                    min={1}
+                    max={255}
+                    step={1}
+                    value={settings.fgThreshold}
+                    format={(value) => value.toFixed(0)}
+                    onChange={(fgThreshold) => updateSettings({ fgThreshold })}
+                  />
+                  <RangeField
+                    label="배경 기준값"
+                    min={0}
+                    max={254}
+                    step={1}
+                    value={settings.bgThreshold}
+                    format={(value) => value.toFixed(0)}
+                    onChange={(bgThreshold) => updateSettings({ bgThreshold })}
+                  />
+                  <RangeField
+                    label="침식 크기"
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={settings.erodeSize}
+                    format={(value) => value.toFixed(0)}
+                    onChange={(erodeSize) => updateSettings({ erodeSize })}
+                  />
+                  <HeroSwitch
+                    isSelected={settings.hardCut}
+                    onChange={(hardCut) => updateSettings({ hardCut })}
+                    title="하드컷 마스크"
+                    description="로고에는 좋고 머리카락에는 부적합"
+                  />
+                  <RangeField
+                    label="하드컷 기준값"
+                    min={0}
+                    max={255}
+                    step={1}
+                    value={settings.hardThreshold}
+                    format={(value) => value.toFixed(0)}
+                    onChange={(hardThreshold) => updateSettings({ hardThreshold })}
+                  />
+                </div>
+              </Tabs.Panel>
+            </Tabs>
+          </Card.Content>
+        </Card>
+      </section>
     </main>
   );
 }
 
 type ImagePanelProps = {
   title: string;
+  subtitle: string;
   url: string;
   emptyText: string;
   checker?: boolean;
   isUpload?: boolean;
   isDragging?: boolean;
   isBusy?: boolean;
+  isLoading?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
   onFileInput?: (files: FileList | null) => void;
   onClick?: () => void;
   onDragState?: (dragging: boolean) => void;
   onDropFile?: (file: File) => void;
+  actions?: React.ReactNode;
+  actionsClassName?: string;
 };
 
 function ImagePanel({
   title,
+  subtitle,
   url,
   emptyText,
   checker,
   isUpload,
   isDragging,
   isBusy,
+  isLoading,
   inputRef,
   onFileInput,
   onClick,
   onDragState,
-  onDropFile
+  onDropFile,
+  actions,
+  actionsClassName = 'grid gap-2 sm:grid-cols-2',
 }: ImagePanelProps) {
-  return (
-    <Card className="image-card">
-      <Card.Header>
-        <Card.Title>{title}</Card.Title>
-      </Card.Header>
-      <Card.Content>
-        <div
-          className={[
-            'image-stage',
-            checker ? 'checker' : '',
-            isUpload ? 'upload-stage' : '',
-            isDragging ? 'is-dragging' : '',
-            isBusy ? 'is-disabled' : ''
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          role={isUpload ? 'button' : undefined}
-          tabIndex={isUpload ? 0 : undefined}
-          onClick={isUpload ? onClick : undefined}
-          onKeyDown={(event) => {
-            if (isUpload && (event.key === 'Enter' || event.key === ' ')) onClick?.();
-          }}
-          onDragOver={(event) => {
-            if (!isUpload) return;
-            event.preventDefault();
-            onDragState?.(true);
-          }}
-          onDragLeave={() => onDragState?.(false)}
-          onDrop={(event) => {
-            if (!isUpload) return;
-            event.preventDefault();
-            onDragState?.(false);
-            const file = event.dataTransfer.files?.[0];
-            if (file?.type.startsWith('image/')) onDropFile?.(file);
-          }}
-        >
-          {isUpload ? (
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              onChange={(event) => onFileInput?.(event.currentTarget.files)}
-            />
-          ) : null}
-          {url ? (
-            <div className="image-fit-shell">
-              <img src={url} alt={title} />
-            </div>
-          ) : (
-            <div className="empty-state">
-              <span>{emptyText}</span>
-              {isUpload ? <small>PNG, JPG, WEBP 지원</small> : null}
-            </div>
-          )}
+  const stageClassName = cx(
+    'relative grid aspect-[4/3] min-h-[360px] w-full place-items-center overflow-hidden rounded-lg border border-border bg-surface-secondary p-4 sm:min-h-[448px]',
+    checker && !isLoading && 'checkerboard',
+    isUpload && 'cursor-pointer border-dashed transition hover:border-accent hover:bg-accent-soft',
+    isDragging && 'border-accent bg-accent-soft',
+    isBusy && 'pointer-events-none opacity-60',
+  );
+
+  const stageContent = (
+    <>
+      {isLoading ? (
+        <div className="grid w-full max-w-sm justify-items-center gap-3 text-center">
+          <Skeleton className="h-8 w-44 rounded-lg" animationType="none" />
+          <Skeleton className="h-4 w-64 max-w-full rounded-lg" animationType="none" />
+          <Skeleton className="h-4 w-40 rounded-lg" animationType="none" />
         </div>
+      ) : url ? (
+        <div className="absolute inset-0 flex items-center justify-center p-4">
+          <img className="h-full w-full rounded-md object-contain" src={url} alt={title} />
+        </div>
+      ) : (
+        <div className="grid max-w-sm justify-items-center gap-3 text-center">
+          <span className="text-base font-bold text-foreground">{emptyText}</span>
+          {isUpload ? (
+            <Chip color="accent" size="sm" variant="soft">
+              PNG · JPG · WEBP
+            </Chip>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <Card className="overflow-hidden border-border bg-surface shadow-sm">
+      <Card.Header className="p-5 pb-0">
+        <div>
+          <Card.Title className="text-xl">{title}</Card.Title>
+          <Card.Description className="mt-1">{subtitle}</Card.Description>
+        </div>
+      </Card.Header>
+      <Card.Content className="p-3 sm:p-5">
+        {isUpload ? (
+          <input
+            ref={inputRef}
+            className="hidden"
+            type="file"
+            accept="image/*"
+            onChange={(event) => onFileInput?.(event.currentTarget.files)}
+          />
+        ) : null}
+        {isUpload ? (
+          // biome-ignore lint/a11y/useSemanticElements: This is a drag-and-drop file dropzone, not a plain button.
+          <div
+            className={stageClassName}
+            role="button"
+            tabIndex={0}
+            onClick={onClick}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') onClick?.();
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              onDragState?.(true);
+            }}
+            onDragLeave={() => onDragState?.(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              onDragState?.(false);
+              const file = event.dataTransfer.files?.[0];
+              if (file?.type.startsWith('image/')) onDropFile?.(file);
+            }}
+          >
+            {stageContent}
+          </div>
+        ) : (
+          <div className={stageClassName}>{stageContent}</div>
+        )}
       </Card.Content>
+      {actions ? (
+        <Card.Footer className={cx('p-5 pt-0', actionsClassName)}>{actions}</Card.Footer>
+      ) : null}
     </Card>
   );
 }
 
-function HeroCheckbox({
+function HeroSwitch({
   isSelected,
   onChange,
   title,
-  description
+  description,
 }: {
   isSelected: boolean;
   onChange: (value: boolean) => void;
@@ -478,61 +610,95 @@ function HeroCheckbox({
   description: string;
 }) {
   return (
-    <Checkbox className="hero-checkbox" isSelected={isSelected} onChange={onChange}>
-      <div>
-        <strong>{title}</strong>
-        <span>{description}</span>
-      </div>
-    </Checkbox>
+    <div className="grid min-h-32 content-start gap-2 rounded-lg border border-border bg-surface p-4">
+      <Switch isSelected={isSelected} onChange={onChange} size="lg">
+        <Switch.Content className="flex w-full items-center justify-between gap-4">
+          <Label className="text-sm font-semibold text-foreground">{title}</Label>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch.Content>
+      </Switch>
+      <Description className="text-sm leading-5 text-muted">{description}</Description>
+    </div>
   );
 }
 
-function NativeSelect({
+function HeroSelect({
   label,
+  description,
   value,
   options,
-  onChange
+  onChange,
 }: {
   label: string;
+  description?: string;
   value: string;
-  options: Array<[string, string]>;
+  options: PresetOption[];
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="field-shell">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.currentTarget.value)}>
-        {options.map(([optionValue, text]) => (
-          <option key={optionValue} value={optionValue}>
-            {text}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Select
+      className="grid min-h-32 content-start gap-3 rounded-lg border border-border bg-surface p-4"
+      fullWidth
+      selectedKey={value}
+      onSelectionChange={(key) => {
+        if (key != null) onChange(String(key));
+      }}
+    >
+      <div className="grid gap-1">
+        <Label className="text-sm font-semibold text-foreground">{label}</Label>
+        {description ? (
+          <Description className="text-sm leading-5 text-muted">{description}</Description>
+        ) : null}
+      </div>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {options.map((option) => (
+            <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+              <div className="grid gap-1">
+                <strong>{option.label}</strong>
+                <span className="text-sm text-muted">{option.desc}</span>
+              </div>
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
   );
 }
 
-function TextField({
+function HeroTextInput({
   label,
   value,
   placeholder,
-  onChange
+  description,
+  onChange,
 }: {
   label: string;
   value: string;
   placeholder: string;
+  description: string;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="field-shell">
-      <span>{label}</span>
-      <input
-        type="text"
+    <TextField
+      className="grid min-h-32 content-start gap-3 rounded-lg border border-border bg-surface p-4"
+      fullWidth
+    >
+      <Label className="text-sm font-semibold text-foreground">{label}</Label>
+      <Input
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
-    </label>
+      <Description className="text-sm leading-5 text-muted">{description}</Description>
+    </TextField>
   );
 }
 
@@ -544,7 +710,7 @@ function RangeField({
   step,
   value,
   format,
-  onChange
+  onChange,
 }: {
   label: string;
   hint?: string;
@@ -556,21 +722,28 @@ function RangeField({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="field-shell range-shell">
-      <span>{label}</span>
-      {hint ? <small>{hint}</small> : null}
-      <div className="range-line">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(event) => onChange(Number(event.currentTarget.value))}
-        />
-        <output>{format(value)}</output>
+    <Slider
+      className="grid min-h-32 content-start gap-3 rounded-lg border border-border bg-surface p-4"
+      minValue={min}
+      maxValue={max}
+      step={step}
+      value={value}
+      onChange={(nextValue) => {
+        if (typeof nextValue === 'number') onChange(nextValue);
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-sm font-semibold text-foreground">{label}</Label>
+        <Slider.Output className="font-mono text-sm font-semibold text-foreground">
+          {format(value)}
+        </Slider.Output>
       </div>
-    </label>
+      <Slider.Track>
+        <Slider.Fill />
+        <Slider.Thumb />
+      </Slider.Track>
+      {hint ? <Description className="text-sm leading-5 text-muted">{hint}</Description> : null}
+    </Slider>
   );
 }
 
@@ -578,7 +751,7 @@ function buildConfig(
   settings: Settings,
   webGpuAvailable: boolean,
   setProgress: (value: number) => void,
-  setLog: (value: string) => void
+  setLog: (value: string) => void,
 ): Config {
   return {
     debug: false,
@@ -586,22 +759,27 @@ function buildConfig(
     model: modelForPreset(settings.preset),
     output: {
       format: 'image/png',
-      quality: 1
+      quality: 1,
     },
     progress: (key, current, total) => {
       if (total > 0) {
         setProgress(Math.round((current / total) * 100));
         setLog(`${key} 다운로드 중: ${formatBytes(current)} / ${formatBytes(total)}`);
       }
-    }
+    },
   };
 }
 
-async function removeMaskWithFallback(file: File, config: Config): Promise<Blob> {
+async function removeMaskWithFallback(
+  file: File,
+  config: Config,
+  setLog: (value: string) => void,
+): Promise<Blob> {
   try {
     return await segmentForeground(file, config);
   } catch (error) {
     if (config.device === 'gpu') {
+      setLog('WebGPU 실행에 실패했습니다. CPU로 다시 시도합니다...');
       return await segmentForeground(file, { ...config, device: 'cpu' });
     }
     throw error;
@@ -609,6 +787,7 @@ async function removeMaskWithFallback(file: File, config: Config): Promise<Blob>
 }
 
 function presetLabel(preset: PresetName): string {
+  if (preset === 'ultra') return 'Ultra HQ - 최대 품질';
   if (preset === 'hq') return 'HQ 일반 / 제품 - 추천';
   if (preset === 'soft') return '부드러운 가장자리 / 머리카락 / 털';
   if (preset === 'logo') return '로고 / 아이콘 선명한 컷';
@@ -622,14 +801,12 @@ function modelForPreset(preset: PresetName): ModelName {
   if (preset === 'classic') return 'isnet_quint8';
   if (preset === 'human') return 'isnet_fp16';
   if (preset === 'logo') return 'isnet';
+  if (preset === 'ultra') return 'isnet_fp16';
   return 'isnet_fp16';
 }
 
 async function composeOutput(imageFile: File, maskBlob: Blob, settings: Settings): Promise<Blob> {
-  const [sourceImage, maskImage] = await Promise.all([
-    loadImage(imageFile),
-    loadImage(maskBlob)
-  ]);
+  const [sourceImage, maskImage] = await Promise.all([loadImage(imageFile), loadImage(maskBlob)]);
 
   const width = sourceImage.naturalWidth;
   const height = sourceImage.naturalHeight;
@@ -663,6 +840,10 @@ async function composeOutput(imageFile: File, maskBlob: Blob, settings: Settings
 
   if (settings.alphaMatting && !settings.hardCut) {
     alpha = softenSemiTransparentEdges(alpha);
+  }
+
+  if (settings.preset === 'ultra' && !settings.hardCut) {
+    alpha = refineUltraAlpha(alpha, sourceData, width, height);
   }
 
   applyAlpha(sourceData, alpha);
@@ -709,6 +890,102 @@ function softenSemiTransparentEdges(alpha: Uint8ClampedArray): Uint8ClampedArray
   return output;
 }
 
+function refineUltraAlpha(
+  alpha: Uint8ClampedArray,
+  imageData: ImageData,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  let output = edgeAwareSmoothAlpha(alpha, imageData, width, height);
+  output = edgeAwareSmoothAlpha(output, imageData, width, height);
+  output = snapConfidentAlpha(output);
+  return output;
+}
+
+function edgeAwareSmoothAlpha(
+  alpha: Uint8ClampedArray,
+  imageData: ImageData,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  const output = new Uint8ClampedArray(alpha);
+  const data = imageData.data;
+  const radius = 2;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      const centerAlpha = alpha[index];
+      if (!isRefinementCandidate(alpha, width, height, x, y, centerAlpha)) continue;
+
+      const sourceOffset = index * 4;
+      const red = data[sourceOffset];
+      const green = data[sourceOffset + 1];
+      const blue = data[sourceOffset + 2];
+      let weightedAlpha = 0;
+      let totalWeight = 0;
+
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        const yy = clamp(y + dy, 0, height - 1);
+        const row = yy * width;
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          const xx = clamp(x + dx, 0, width - 1);
+          const neighborIndex = row + xx;
+          const neighborOffset = neighborIndex * 4;
+          const colorDistance =
+            Math.abs(red - data[neighborOffset]) +
+            Math.abs(green - data[neighborOffset + 1]) +
+            Math.abs(blue - data[neighborOffset + 2]);
+          const spatialWeight = dx === 0 && dy === 0 ? 1.6 : 1 / (1 + Math.hypot(dx, dy));
+          const colorWeight = Math.exp(-colorDistance / 70);
+          const weight = spatialWeight * colorWeight;
+
+          weightedAlpha += alpha[neighborIndex] * weight;
+          totalWeight += weight;
+        }
+      }
+
+      output[index] = Math.round(weightedAlpha / totalWeight);
+    }
+  }
+
+  return output;
+}
+
+function isRefinementCandidate(
+  alpha: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  value: number,
+): boolean {
+  if (value > 8 && value < 247) return true;
+
+  const index = y * width + x;
+  const left = alpha[y * width + clamp(x - 1, 0, width - 1)];
+  const right = alpha[y * width + clamp(x + 1, 0, width - 1)];
+  const top = alpha[clamp(y - 1, 0, height - 1) * width + x];
+  const bottom = alpha[clamp(y + 1, 0, height - 1) * width + x];
+
+  return (
+    Math.abs(value - left) > 36 ||
+    Math.abs(value - right) > 36 ||
+    Math.abs(value - top) > 36 ||
+    Math.abs(value - bottom) > 36 ||
+    (alpha[index] > 0 && alpha[index] < 255)
+  );
+}
+
+function snapConfidentAlpha(alpha: Uint8ClampedArray): Uint8ClampedArray {
+  const output = new Uint8ClampedArray(alpha.length);
+  for (let index = 0; index < alpha.length; index += 1) {
+    const value = alpha[index];
+    output[index] = value < 5 ? 0 : value > 250 ? 255 : value;
+  }
+  return output;
+}
+
 function hardThreshold(alpha: Uint8ClampedArray, threshold: number): Uint8ClampedArray {
   const output = new Uint8ClampedArray(alpha.length);
   for (let index = 0; index < alpha.length; index += 1) {
@@ -721,7 +998,7 @@ function morphAlpha(
   alpha: Uint8ClampedArray,
   width: number,
   height: number,
-  amount: number
+  amount: number,
 ): Uint8ClampedArray {
   const radius = Math.min(5, Math.abs(Math.trunc(amount)));
   const erode = amount < 0;
@@ -750,7 +1027,7 @@ function blurAlpha(
   alpha: Uint8ClampedArray,
   width: number,
   height: number,
-  radius: number
+  radius: number,
 ): Uint8ClampedArray {
   const input = makeCanvas(width, height);
   const inputContext = mustContext(input);
@@ -851,11 +1128,15 @@ function revokeUrl(url: string) {
   if (url) URL.revokeObjectURL(url);
 }
 
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing root element.');
 
 createRoot(root).render(
   <StrictMode>
     <App />
-  </StrictMode>
+  </StrictMode>,
 );

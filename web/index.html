@@ -3,10 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="브라우저에서 실행되는 고품질 배경 제거 도구"
-    />
+    <meta name="description" content="브라우저에서 실행하는 고품질 배경 제거 도구" />
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("heroui-theme") || "dark";
+          const theme =
+            stored === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : stored;
+          document.documentElement.classList.add(theme);
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch {
+          document.documentElement.classList.add("dark");
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
     <title>BG Remover Pro v6 HQ</title>
   </head>
   <body>
