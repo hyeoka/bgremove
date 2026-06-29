@@ -147,7 +147,7 @@ export function loginPageResponse(request: Request) {
   </body>
 </html>`,
     {
-      status: 401,
+      status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     },
   );
