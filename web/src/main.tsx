@@ -13,6 +13,8 @@ import {
   Switch,
   Tabs,
   TextField,
+  ToastProvider,
+  toast,
 } from '@heroui/react';
 import { type Config, preload, segmentForeground } from '@imgly/background-removal';
 import { type RefObject, StrictMode, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +38,17 @@ type Settings = {
   hardCut: boolean;
   hardThreshold: number;
 };
+
+type AuthUser = {
+  id: string;
+  username: string;
+  global_name?: string | null;
+};
+
+type AuthState =
+  | { status: 'checking' }
+  | { status: 'authorized'; user: AuthUser }
+  | { status: 'local' };
 
 type PresetOption = {
   value: PresetName;
@@ -72,6 +85,7 @@ const initialSettings: Settings = {
 };
 
 function App() {
+  const [authState, setAuthState] = useState<AuthState>({ status: 'checking' });
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [sourceFile, setSourceFileState] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
@@ -83,6 +97,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const downloadRef = useRef<HTMLAnchorElement>(null);
+  const hasShownFirstRunNoticeRef = useRef(false);
   const webGpuAvailable = useMemo(() => typeof navigator !== 'undefined' && 'gpu' in navigator, []);
 
   useEffect(() => {
@@ -90,6 +105,42 @@ function App() {
       setLog('현재 브라우저에서 WebGPU를 사용할 수 없어 CPU 모드로 실행합니다.');
     }
   }, [webGpuAvailable]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAuth() {
+      try {
+        const response = await fetch('/api/auth/me', {
+          cache: 'no-store',
+          credentials: 'include',
+        });
+
+        if (cancelled) return;
+
+        if (response.ok) {
+          const data = (await response.json()) as { user: AuthUser };
+          setAuthState({ status: 'authorized', user: data.user });
+          return;
+        }
+
+        if (response.status === 404) {
+          setAuthState({ status: 'local' });
+          return;
+        }
+
+        window.location.assign('/api/auth/login');
+      } catch {
+        if (!cancelled) setAuthState({ status: 'local' });
+      }
+    }
+
+    void loadAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => () => revokeUrl(sourceUrl), [sourceUrl]);
   useEffect(() => () => revokeUrl(resultUrl), [resultUrl]);
@@ -152,6 +203,7 @@ function App() {
     setProgress(0);
     setStatus('이미지 준비됨');
     setLog(`불러온 파일: ${file.name}\n크기: ${formatBytes(file.size)}`);
+    showToast('info', '이미지 준비 완료', '배경 제거를 누르면 브라우저에서 바로 처리합니다.');
   }
 
   function resetResult() {
@@ -171,17 +223,36 @@ function App() {
   }
 
   async function runPreload() {
+    showToast(
+      'info',
+      'AI 모델을 미리 받는 중',
+      '처음 한 번은 모델 다운로드 때문에 조금 걸릴 수 있습니다.',
+    );
     await withBusy('모델 받는 중', async () => {
       await preload(buildConfig(settings, webGpuAvailable, setProgress, setLog));
       setProgress(100);
       setLog('모델 캐시가 완료되었습니다. 다음 실행부터 더 빠르게 시작합니다.');
+      showToast('success', 'AI 모델 준비 완료', '이제 배경 제거를 더 빠르게 시작할 수 있습니다.');
     });
   }
 
   async function runRemoval() {
     if (!sourceFile) {
       setLog('먼저 이미지를 업로드해 주세요.');
+      showToast('warning', '이미지가 필요합니다', '배경을 제거할 이미지를 먼저 선택해 주세요.');
       return;
+    }
+
+    const isFirstRemoval = !hasShownFirstRunNoticeRef.current;
+
+    if (isFirstRemoval) {
+      hasShownFirstRunNoticeRef.current = true;
+      showToast(
+        'warning',
+        '처음 실행은 조금 느릴 수 있어요',
+        'AI 모델을 브라우저에 다운로드한 뒤 처리해서 첫 이미지는 시간이 더 걸릴 수 있습니다.',
+        7000,
+      );
     }
 
     const file = sourceFile;
@@ -203,6 +274,13 @@ function App() {
       }
 
       setLog(lines.join('\n'));
+      if (!isFirstRemoval) {
+        showToast(
+          'info',
+          '배경 제거 시작',
+          `${presetLabel(settings.preset)} 프리셋으로 처리합니다.`,
+        );
+      }
 
       const config = buildConfig(settings, webGpuAvailable, setProgress, setLog);
       const maskBlob = await removeMaskWithFallback(file, config, setLog);
@@ -211,6 +289,11 @@ function App() {
       setResultUrl(URL.createObjectURL(outputBlob));
       setProgress(100);
       setLog(`${lines.join('\n')}\n완료되었습니다. PNG를 다운로드할 수 있습니다.`);
+      showToast(
+        'success',
+        '배경 제거 완료',
+        '결과 PNG가 준비되었습니다. 아래 버튼으로 다운로드할 수 있어요.',
+      );
     });
   }
 
@@ -224,6 +307,11 @@ function App() {
       console.error(error);
       setStatus('실패');
       setLog(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
+      showToast(
+        'danger',
+        '작업에 실패했습니다',
+        error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+      );
     } finally {
       setIsBusy(false);
     }
@@ -251,6 +339,7 @@ function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <AuthBadge authState={authState} />
               <Chip
                 color={status === '실패' ? 'danger' : status === '완료' ? 'success' : 'accent'}
                 variant="soft"
@@ -493,6 +582,43 @@ type ImagePanelProps = {
   actions?: React.ReactNode;
   actionsClassName?: string;
 };
+
+function AuthBadge({ authState }: { authState: AuthState }) {
+  if (authState.status === 'authorized') {
+    const name = authState.user.global_name || authState.user.username;
+
+    return (
+      <>
+        <Chip variant="secondary" className="text-base px-3 py-2">
+          Discord: {name}
+        </Chip>
+        <Button
+          size="sm"
+          variant="secondary"
+          onPress={() => {
+            window.location.assign('/api/auth/logout');
+          }}
+        >
+          로그아웃
+        </Button>
+      </>
+    );
+  }
+
+  if (authState.status === 'checking') {
+    return (
+      <Chip color="warning" variant="soft" className="text-base px-3 py-2">
+        로그인 확인 중
+      </Chip>
+    );
+  }
+
+  return (
+    <Chip color="warning" variant="soft" className="text-base px-3 py-2">
+      로컬 개발 모드
+    </Chip>
+  );
+}
 
 function ImagePanel({
   title,
@@ -1132,11 +1258,22 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
 }
 
+function showToast(
+  variant: 'info' | 'success' | 'warning' | 'danger',
+  title: string,
+  description: string,
+  timeout?: number,
+) {
+  toast.clear();
+  toast[variant](title, { description, timeout });
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing root element.');
 
 createRoot(root).render(
   <StrictMode>
     <App />
+    <ToastProvider maxVisibleToasts={4} placement="top end" />
   </StrictMode>,
 );

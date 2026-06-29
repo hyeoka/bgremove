@@ -25,6 +25,35 @@ npm run build
 
 `public/_headers`에 WebGPU/WASM 성능을 위한 COOP/COEP 헤더를 넣어두었습니다.
 
+## Discord OAuth Access Gate
+
+Cloudflare Pages Functions가 Discord OAuth2로 앱 접근을 막습니다. 기본 허용 Discord user ID는 아래 네 개입니다.
+
+- `1187909015397728276`
+- `1296053433371066390`
+- `1268931934596366440`
+- `828545528056512512`
+
+Cloudflare Pages 환경변수:
+
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
+- `DISCORD_SESSION_SECRET`
+- `DISCORD_REDIRECT_URI` optional, 기본값은 `https://your-domain/api/auth/callback`
+- `DISCORD_ALLOWED_USER_IDS` optional, 쉼표로 구분한 허용 ID override
+
+Discord Developer Portal의 OAuth2 redirect에 배포 도메인을 추가하세요.
+
+```text
+https://your-domain/api/auth/callback
+```
+
+로컬에서 Pages Functions까지 테스트하려면 `.dev.vars.example`을 `.dev.vars`로 복사하고 아래 redirect도 Discord에 추가하세요.
+
+```text
+http://localhost:8788/api/auth/callback
+```
+
 ## Notes
 
 - 첫 실행은 모델과 WASM 파일을 내려받아서 느릴 수 있습니다. 이후에는 브라우저 캐시가 사용됩니다.
