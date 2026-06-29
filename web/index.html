@@ -1,112 +1,154 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="브라우저에서 실행되는 무료 배경 제거 도구"
+      content="High quality browser-based background remover"
     />
-    <title>BG Remover Web</title>
+    <title>BG Remover Pro v6 HQ</title>
   </head>
   <body>
-    <div id="app">
-      <main class="shell">
-        <section class="workspace">
-          <header class="topbar">
-            <div>
-              <p class="eyebrow">Browser AI</p>
-              <h1>BG Remover Web</h1>
-            </div>
-            <div class="status-pill" id="runtimeStatus">준비됨</div>
-          </header>
+    <main class="gradio-page">
+      <section class="intro">
+        <h1>BG Remover Pro v6 HQ</h1>
+        <p>
+          Default is HQ. First run may download the model, so wait and watch the
+          status log.
+        </p>
+        <p>
+          <strong>Best starting point:</strong> HQ General / product, Alpha
+          matting ON, Edge adjust -1, Feather 0.
+        </p>
+      </section>
 
-          <div class="dropzone" id="dropzone">
+      <section class="image-row">
+        <figure class="image-box">
+          <figcaption>Original image</figcaption>
+          <div class="image-stage upload-stage" id="dropzone">
             <input id="fileInput" type="file" accept="image/*" />
-            <div class="dropzone-copy">
-              <strong>이미지를 올려주세요</strong>
-              <span>클릭하거나 파일을 끌어다 놓으면 됩니다.</span>
-            </div>
+            <img id="sourcePreview" alt="Original image preview" />
+            <span id="sourceEmpty">Drop Image Here<br />- or -<br />Click to Upload</span>
           </div>
+        </figure>
 
-          <div class="preview-grid">
-            <figure class="preview-panel">
-              <figcaption>원본</figcaption>
-              <div class="preview-canvas">
-                <img id="sourcePreview" alt="원본 미리보기" />
-                <span id="sourceEmpty">업로드 대기 중</span>
-              </div>
-            </figure>
-            <figure class="preview-panel">
-              <figcaption>결과</figcaption>
-              <div class="preview-canvas checker" id="resultCanvasWrap">
-                <img id="resultPreview" alt="배경 제거 결과" />
-                <span id="resultEmpty">처리 후 표시됩니다</span>
-              </div>
-            </figure>
+        <figure class="image-box">
+          <figcaption>Result PNG</figcaption>
+          <div class="image-stage checker">
+            <img id="resultPreview" alt="Background removal result" />
+            <span id="resultEmpty">Output will appear here</span>
           </div>
-        </section>
+        </figure>
+      </section>
 
-        <aside class="controls">
-          <div class="control-group">
-            <label for="modelSelect">품질</label>
-            <select id="modelSelect">
-              <option value="isnet_fp16" selected>균형형 - 추천</option>
-              <option value="isnet_quint8">가벼움 - 빠른 로딩</option>
-              <option value="isnet">최고 품질 - 큰 모델</option>
+      <section class="form-panel">
+        <div class="form-row three">
+          <label class="field">
+            <span>Quality preset</span>
+            <select id="presetSelect">
+              <option value="hq" selected>HQ General / product - recommended</option>
+              <option value="soft">Soft edges / hair / fur</option>
+              <option value="logo">Logo / icon sharp edge</option>
+              <option value="human">Human portrait classic</option>
+              <option value="classic">Classic U2Net</option>
+              <option value="fast">Fast preview only</option>
             </select>
-          </div>
+          </label>
 
-          <div class="control-row">
-            <label class="toggle">
-              <input id="gpuToggle" type="checkbox" checked />
-              <span>WebGPU 사용</span>
-            </label>
-            <label class="toggle">
-              <input id="hardCutToggle" type="checkbox" />
-              <span>로고용 하드컷</span>
-            </label>
-          </div>
+          <label class="check-field">
+            <input id="alphaMatting" type="checkbox" checked />
+            <span>Alpha matting - better edges</span>
+          </label>
 
-          <div class="control-group">
-            <label for="edgeAdjust">가장자리 보정 <output id="edgeValue">-1</output></label>
+          <label class="check-field">
+            <input id="postProcessMask" type="checkbox" checked />
+            <span>Clean mask</span>
+          </label>
+        </div>
+
+        <div class="form-row three">
+          <label class="field">
+            <span>Edge adjust: negative removes halo, positive keeps more edge</span>
             <input id="edgeAdjust" type="range" min="-5" max="5" step="1" value="-1" />
+            <output id="edgeValue">-1</output>
+          </label>
+
+          <label class="field">
+            <span>Feather / soft edge</span>
+            <input id="feather" type="range" min="0" max="2" step="0.05" value="0" />
+            <output id="featherValue">0.00</output>
+          </label>
+
+          <label class="field">
+            <span>Optional background: empty transparent / #000000 / white</span>
+            <input id="previewBg" type="text" value="" placeholder="" />
+          </label>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced alpha matting settings</summary>
+
+          <div class="form-row three">
+            <label class="field">
+              <span>Foreground threshold</span>
+              <input id="fgThreshold" type="range" min="1" max="255" step="1" value="240" />
+              <output id="fgValue">240</output>
+            </label>
+
+            <label class="field">
+              <span>Background threshold</span>
+              <input id="bgThreshold" type="range" min="0" max="254" step="1" value="10" />
+              <output id="bgValue">10</output>
+            </label>
+
+            <label class="field">
+              <span>Erode size</span>
+              <input id="erodeSize" type="range" min="1" max="30" step="1" value="10" />
+              <output id="erodeValue">10</output>
+            </label>
           </div>
 
-          <div class="control-group">
-            <label for="feather">부드럽게 <output id="featherValue">0.0</output></label>
-            <input id="feather" type="range" min="0" max="4" step="0.1" value="0" />
-          </div>
+          <div class="form-row two">
+            <label class="check-field">
+              <input id="hardCutToggle" type="checkbox" />
+              <span>Hard cut mask - good for logos, bad for hair</span>
+            </label>
 
-          <div class="control-group">
-            <label for="threshold">하드컷 기준 <output id="thresholdValue">150</output></label>
-            <input id="threshold" type="range" min="0" max="255" step="1" value="150" />
+            <label class="field">
+              <span>Hard cut threshold</span>
+              <input id="threshold" type="range" min="0" max="255" step="1" value="128" />
+              <output id="thresholdValue">128</output>
+            </label>
           </div>
+        </details>
 
-          <div class="control-group">
-            <label for="backgroundSelect">내보내기 배경</label>
-            <select id="backgroundSelect">
-              <option value="transparent" selected>투명 PNG</option>
-              <option value="white">흰색</option>
-              <option value="black">검정</option>
-              <option value="custom">직접 선택</option>
-            </select>
-            <input id="customBackground" type="color" value="#f4f1e8" aria-label="배경색 선택" />
-          </div>
+        <div class="button-row">
+          <button id="runButton" type="button">Remove background</button>
+          <button id="preloadButton" type="button" class="secondary">Preload model</button>
+        </div>
 
-          <div class="actions">
-            <button id="preloadButton" type="button" class="secondary">모델 미리 받기</button>
-            <button id="runButton" type="button">배경 제거</button>
-            <a id="downloadLink" class="download disabled" download="bg-removed.png">PNG 다운로드</a>
-          </div>
+        <label class="file-output">
+          <span>PNG download</span>
+          <a id="downloadLink" class="download disabled" download="bg-removed.png">
+            Download result
+          </a>
+        </label>
 
+        <label class="status-output">
+          <span>Status / log</span>
+          <textarea id="logText" rows="12" readonly>Ready.</textarea>
+        </label>
+
+        <div class="runtime-line">
           <div class="meter" aria-live="polite">
             <div class="meter-bar" id="meterBar"></div>
           </div>
-          <p class="log" id="logText">첫 실행은 모델 다운로드 때문에 시간이 걸릴 수 있습니다.</p>
-        </aside>
-      </main>
-    </div>
+          <span id="runtimeStatus">Ready</span>
+        </div>
+      </section>
+    </main>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

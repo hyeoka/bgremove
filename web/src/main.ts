@@ -1,8 +1,8 @@
 import { preload, segmentForeground, type Config } from '@imgly/background-removal';
 import './styles.css';
 
+type PresetName = 'hq' | 'soft' | 'logo' | 'human' | 'classic' | 'fast';
 type ModelName = 'isnet' | 'isnet_fp16' | 'isnet_quint8';
-type BackgroundMode = 'transparent' | 'white' | 'black' | 'custom';
 
 const els = {
   dropzone: byId<HTMLDivElement>('dropzone'),
@@ -11,37 +11,42 @@ const els = {
   resultPreview: byId<HTMLImageElement>('resultPreview'),
   sourceEmpty: byId<HTMLSpanElement>('sourceEmpty'),
   resultEmpty: byId<HTMLSpanElement>('resultEmpty'),
-  runtimeStatus: byId<HTMLDivElement>('runtimeStatus'),
-  modelSelect: byId<HTMLSelectElement>('modelSelect'),
-  gpuToggle: byId<HTMLInputElement>('gpuToggle'),
-  hardCutToggle: byId<HTMLInputElement>('hardCutToggle'),
+  runtimeStatus: byId<HTMLSpanElement>('runtimeStatus'),
+  presetSelect: byId<HTMLSelectElement>('presetSelect'),
+  alphaMatting: byId<HTMLInputElement>('alphaMatting'),
+  postProcessMask: byId<HTMLInputElement>('postProcessMask'),
   edgeAdjust: byId<HTMLInputElement>('edgeAdjust'),
   feather: byId<HTMLInputElement>('feather'),
+  previewBg: byId<HTMLInputElement>('previewBg'),
+  fgThreshold: byId<HTMLInputElement>('fgThreshold'),
+  bgThreshold: byId<HTMLInputElement>('bgThreshold'),
+  erodeSize: byId<HTMLInputElement>('erodeSize'),
+  hardCutToggle: byId<HTMLInputElement>('hardCutToggle'),
   threshold: byId<HTMLInputElement>('threshold'),
   edgeValue: byId<HTMLOutputElement>('edgeValue'),
   featherValue: byId<HTMLOutputElement>('featherValue'),
+  fgValue: byId<HTMLOutputElement>('fgValue'),
+  bgValue: byId<HTMLOutputElement>('bgValue'),
+  erodeValue: byId<HTMLOutputElement>('erodeValue'),
   thresholdValue: byId<HTMLOutputElement>('thresholdValue'),
-  backgroundSelect: byId<HTMLSelectElement>('backgroundSelect'),
-  customBackground: byId<HTMLInputElement>('customBackground'),
   preloadButton: byId<HTMLButtonElement>('preloadButton'),
   runButton: byId<HTMLButtonElement>('runButton'),
   downloadLink: byId<HTMLAnchorElement>('downloadLink'),
   meterBar: byId<HTMLDivElement>('meterBar'),
-  logText: byId<HTMLParagraphElement>('logText')
+  logText: byId<HTMLTextAreaElement>('logText')
 };
 
 let sourceFile: File | null = null;
 let sourceUrl = '';
 let resultUrl = '';
+let webGpuAvailable = false;
 
 init();
 
 function init() {
-  const hasWebGpu = 'gpu' in navigator;
-  els.gpuToggle.disabled = !hasWebGpu;
-  els.gpuToggle.checked = hasWebGpu;
-  if (!hasWebGpu) {
-    setLog('이 브라우저는 WebGPU가 없어 CPU로 실행됩니다.');
+  webGpuAvailable = 'gpu' in navigator;
+  if (!webGpuAvailable) {
+    setLog('WebGPU is not available in this browser. CPU mode will be used.');
   }
 
   els.fileInput.addEventListener('change', () => {
@@ -64,21 +69,60 @@ function init() {
     if (file?.type.startsWith('image/')) setSourceFile(file);
   });
 
+  els.presetSelect.addEventListener('change', applyPresetDefaults);
   els.preloadButton.addEventListener('click', () => runPreload());
   els.runButton.addEventListener('click', () => runRemoval());
 
-  for (const input of [els.edgeAdjust, els.feather, els.threshold]) {
+  for (const input of [
+    els.edgeAdjust,
+    els.feather,
+    els.fgThreshold,
+    els.bgThreshold,
+    els.erodeSize,
+    els.threshold
+  ]) {
     input.addEventListener('input', syncControlLabels);
   }
-  els.backgroundSelect.addEventListener('change', syncBackgroundPicker);
+
   syncControlLabels();
-  syncBackgroundPicker();
 }
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element: ${id}`);
   return element as T;
+}
+
+function applyPresetDefaults() {
+  const preset = els.presetSelect.value as PresetName;
+
+  if (preset === 'logo') {
+    els.alphaMatting.checked = false;
+    els.edgeAdjust.value = '-1';
+    els.feather.value = '0';
+    els.hardCutToggle.checked = true;
+    els.threshold.value = '150';
+  } else if (preset === 'soft') {
+    els.alphaMatting.checked = true;
+    els.edgeAdjust.value = '-1';
+    els.feather.value = '0.25';
+    els.hardCutToggle.checked = false;
+    els.threshold.value = '128';
+  } else if (preset === 'fast') {
+    els.alphaMatting.checked = false;
+    els.edgeAdjust.value = '0';
+    els.feather.value = '0';
+    els.hardCutToggle.checked = false;
+    els.threshold.value = '128';
+  } else {
+    els.alphaMatting.checked = true;
+    els.edgeAdjust.value = '-1';
+    els.feather.value = '0';
+    els.hardCutToggle.checked = false;
+    els.threshold.value = '128';
+  }
+
+  syncControlLabels();
 }
 
 function setSourceFile(file: File) {
@@ -90,27 +134,39 @@ function setSourceFile(file: File) {
   els.sourceEmpty.hidden = true;
   resetResult();
   setProgress(0);
-  setStatus('이미지 준비됨');
-  setLog(`${file.name} · ${formatBytes(file.size)}`);
+  setStatus('Image ready');
+  setLog(`Loaded ${file.name}\nSize: ${formatBytes(file.size)}`);
 }
 
 async function runPreload() {
-  await withBusy('모델 받는 중', async () => {
+  await withBusy('Preloading model', async () => {
     await preload(buildConfig());
     setProgress(100);
-    setLog('모델 캐시 완료. 다음 실행부터 더 빠르게 시작됩니다.');
+    setLog('Model cache complete. Later runs should start faster.');
   });
 }
 
 async function runRemoval() {
   if (!sourceFile) {
-    setLog('먼저 이미지를 업로드해주세요.');
+    setLog('Put an image first.');
     return;
   }
 
   const file = sourceFile;
-  await withBusy('처리 중', async () => {
+  await withBusy('Working', async () => {
     resetResult();
+    const preset = els.presetSelect.value as PresetName;
+    const lines = [
+      `Preset: ${preset}`,
+      `Model: ${modelForPreset(preset)}`,
+      `Alpha matting: ${els.alphaMatting.checked}`,
+      'Running...'
+    ];
+    if (preset === 'fast') {
+      lines.splice(1, 0, 'Warning: fast preview has lower quality. Use HQ for final images.');
+    }
+    setLog(lines.join('\n'));
+
     const maskBlob = await removeMaskWithFallback(file);
     const outputBlob = await composeOutput(file, maskBlob);
 
@@ -124,7 +180,7 @@ async function runRemoval() {
     els.downloadLink.classList.remove('disabled');
     els.downloadLink.download = makeDownloadName(file.name);
     setProgress(100);
-    setLog('완료. PNG 다운로드 버튼으로 저장할 수 있습니다.');
+    setLog(`${lines.join('\n')}\nDone. Download PNG below.`);
   });
 }
 
@@ -134,7 +190,7 @@ async function removeMaskWithFallback(file: File): Promise<Blob> {
     return await segmentForeground(file, config);
   } catch (error) {
     if (config.device === 'gpu') {
-      setLog('WebGPU 실행이 실패해서 CPU로 한 번 더 시도합니다.');
+      setLog('WebGPU failed. Trying again on CPU...');
       return await segmentForeground(file, { ...config, device: 'cpu' });
     }
     throw error;
@@ -144,8 +200,8 @@ async function removeMaskWithFallback(file: File): Promise<Blob> {
 function buildConfig(): Config {
   return {
     debug: false,
-    device: els.gpuToggle.checked && !els.gpuToggle.disabled ? 'gpu' : 'cpu',
-    model: els.modelSelect.value as ModelName,
+    device: webGpuAvailable ? 'gpu' : 'cpu',
+    model: modelForPreset(els.presetSelect.value as PresetName),
     output: {
       format: 'image/png',
       quality: 1
@@ -153,10 +209,18 @@ function buildConfig(): Config {
     progress: (key, current, total) => {
       if (total > 0) {
         setProgress(Math.round((current / total) * 100));
-        setLog(`${key} 다운로드 중 · ${formatBytes(current)} / ${formatBytes(total)}`);
+        setLog(`Downloading ${key}: ${formatBytes(current)} / ${formatBytes(total)}`);
       }
     }
   };
+}
+
+function modelForPreset(preset: PresetName): ModelName {
+  if (preset === 'fast') return 'isnet_quint8';
+  if (preset === 'classic') return 'isnet_quint8';
+  if (preset === 'human') return 'isnet_fp16';
+  if (preset === 'logo') return 'isnet';
+  return 'isnet_fp16';
 }
 
 async function composeOutput(imageFile: File, maskBlob: Blob): Promise<Blob> {
@@ -179,6 +243,10 @@ async function composeOutput(imageFile: File, maskBlob: Blob): Promise<Blob> {
   const maskData = maskContext.getImageData(0, 0, width, height);
   let alpha = maskToAlpha(maskData);
 
+  if (els.postProcessMask.checked) {
+    alpha = cleanMask(alpha, width, height);
+  }
+
   if (els.hardCutToggle.checked) {
     alpha = hardThreshold(alpha, Number(els.threshold.value));
   }
@@ -193,9 +261,13 @@ async function composeOutput(imageFile: File, maskBlob: Blob): Promise<Blob> {
     alpha = blurAlpha(alpha, width, height, feather);
   }
 
+  if (els.alphaMatting.checked && !els.hardCutToggle.checked) {
+    alpha = softenSemiTransparentEdges(alpha);
+  }
+
   applyAlpha(sourceData, alpha);
 
-  const background = getBackgroundColor();
+  const background = normalizeBackground(els.previewBg.value);
   if (background) {
     const outputCanvas = makeCanvas(width, height);
     const outputContext = mustContext(outputCanvas);
@@ -217,6 +289,28 @@ function maskToAlpha(maskData: ImageData): Uint8ClampedArray {
     alpha[target] = Math.round((data[source] + data[source + 1] + data[source + 2]) / 3);
   }
   return alpha;
+}
+
+function cleanMask(
+  alpha: Uint8ClampedArray,
+  width: number,
+  height: number
+): Uint8ClampedArray {
+  const opened = morphAlpha(morphAlpha(alpha, width, height, -1), width, height, 1);
+  const output = new Uint8ClampedArray(alpha.length);
+  for (let index = 0; index < alpha.length; index += 1) {
+    output[index] = Math.round(alpha[index] * 0.75 + opened[index] * 0.25);
+  }
+  return output;
+}
+
+function softenSemiTransparentEdges(alpha: Uint8ClampedArray): Uint8ClampedArray {
+  const output = new Uint8ClampedArray(alpha.length);
+  for (let index = 0; index < alpha.length; index += 1) {
+    const value = alpha[index];
+    output[index] = value > 14 && value < 242 ? Math.round(value * 0.96) : value;
+  }
+  return output;
 }
 
 function hardThreshold(alpha: Uint8ClampedArray, threshold: number): Uint8ClampedArray {
@@ -289,12 +383,12 @@ function applyAlpha(imageData: ImageData, alpha: Uint8ClampedArray) {
   }
 }
 
-function getBackgroundColor(): string | null {
-  const mode = els.backgroundSelect.value as BackgroundMode;
-  if (mode === 'transparent') return null;
-  if (mode === 'white') return '#ffffff';
-  if (mode === 'black') return '#000000';
-  return els.customBackground.value;
+function normalizeBackground(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'transparent' || trimmed.toLowerCase() === 'none') {
+    return null;
+  }
+  return trimmed;
 }
 
 function loadImage(blob: Blob): Promise<HTMLImageElement> {
@@ -307,7 +401,7 @@ function loadImage(blob: Blob): Promise<HTMLImageElement> {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('이미지를 읽지 못했습니다.'));
+      reject(new Error('Could not read the image.'));
     };
     image.src = url;
   });
@@ -322,7 +416,7 @@ function makeCanvas(width: number, height: number): HTMLCanvasElement {
 
 function mustContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('Canvas 2D를 사용할 수 없습니다.');
+  if (!context) throw new Error('Canvas 2D is not available.');
   return context;
 }
 
@@ -330,7 +424,7 @@ function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
-      else reject(new Error('PNG 생성에 실패했습니다.'));
+      else reject(new Error('PNG export failed.'));
     }, 'image/png');
   });
 }
@@ -340,11 +434,11 @@ async function withBusy(label: string, task: () => Promise<void>) {
   setStatus(label);
   try {
     await task();
-    setStatus('완료');
+    setStatus('Complete');
   } catch (error) {
     console.error(error);
-    setStatus('실패');
-    setLog(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
+    setStatus('Failed');
+    setLog(error instanceof Error ? error.message : 'Unknown error.');
   } finally {
     setBusy(false);
   }
@@ -365,7 +459,7 @@ function setStatus(text: string) {
 }
 
 function setLog(text: string) {
-  els.logText.textContent = text;
+  els.logText.value = text;
 }
 
 function resetResult() {
@@ -380,12 +474,11 @@ function resetResult() {
 
 function syncControlLabels() {
   els.edgeValue.value = els.edgeAdjust.value;
-  els.featherValue.value = Number(els.feather.value).toFixed(1);
+  els.featherValue.value = Number(els.feather.value).toFixed(2);
+  els.fgValue.value = els.fgThreshold.value;
+  els.bgValue.value = els.bgThreshold.value;
+  els.erodeValue.value = els.erodeSize.value;
   els.thresholdValue.value = els.threshold.value;
-}
-
-function syncBackgroundPicker() {
-  els.customBackground.hidden = els.backgroundSelect.value !== 'custom';
 }
 
 function makeDownloadName(name: string): string {
