@@ -1,7 +1,7 @@
 const DISCORD_OAUTH_TOKEN_URL = 'https://discord.com/api/oauth2/token';
 const DISCORD_CURRENT_USER_URL = 'https://discord.com/api/v10/users/@me';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
-const SITE_ORIGIN = 'https://bgremove-cxk.pages.dev';
+const SITE_ORIGIN = 'https://removebg.giyeoum.me';
 const SITE_TITLE = '기여움 디자인팀 BG Remover';
 const SITE_DESCRIPTION = '기여움 디자인팀 전용 고품질 AI 배경 제거 도구';
 const SITE_IMAGE = `${SITE_ORIGIN}/favicon.webp`;
