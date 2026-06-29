@@ -1,17 +1,32 @@
-import { type AuthEnv, readSession } from './_shared/auth';
+import { type AuthEnv, loginPageResponse, readSession } from './_shared/auth';
 
 export const onRequest: PagesFunction<AuthEnv> = async ({ request, next, env }) => {
   const url = new URL(request.url);
 
-  if (url.pathname.startsWith('/api/auth/')) {
+  if (url.pathname.startsWith('/api/auth/') || isPublicAsset(url.pathname)) {
     return next();
   }
 
   const user = await readSession(request, env);
   if (user) return next();
 
-  const loginUrl = new URL('/api/auth/login', url.origin);
-  loginUrl.searchParams.set('next', `${url.pathname}${url.search}`);
-
-  return Response.redirect(loginUrl.toString(), 302);
+  return loginPageResponse(request);
 };
+
+function isPublicAsset(pathname: string) {
+  return (
+    pathname === '/favicon.webp' ||
+    pathname === '/robots.txt' ||
+    pathname.startsWith('/assets/') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.jpg') ||
+    pathname.endsWith('.jpeg') ||
+    pathname.endsWith('.webp') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.ico') ||
+    pathname.endsWith('.css') ||
+    pathname.endsWith('.js') ||
+    pathname.endsWith('.wasm') ||
+    pathname.endsWith('.mjs')
+  );
+}
